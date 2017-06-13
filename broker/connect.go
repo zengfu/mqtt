@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package packet
+package broker
 
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
@@ -67,12 +68,14 @@ func NewConnectPacket() *ConnectPacket {
 		Version:      4,
 	}
 }
-func (c *ConnectPacket) UpdateDb() error {
-	db, err := gorm.Open("mysql", "root:71451085Zf*@/test?charset=utf8&parseTime=True&loc=Local")
-	if err != nil {
-		return err
-	}
-	defer db.Close()
+func (c *ConnectPacket) QuerySession() bool {
+	db, err := OpenDb()
+	defer db.close()
+	return !db.Where("client_id=?", c.ClientID).First(&client).RecordNotFound()
+	return err
+}
+func (c *ConnectPacket) UpdateSession() error {
+	db, err := OpenDb()
 	var client ConnectPacket
 	db.Where("client_id=?", c.ClientID).First(&client)
 	client.Username = c.Username
@@ -83,7 +86,6 @@ func (c *ConnectPacket) UpdateDb() error {
 	client.Online = true
 	var mes Message
 	db.Model(&client).Related(&mes, "Will")
-
 	//client.Will = c.Will
 	if c.Will != nil {
 		mes.QOS = c.Will.QOS
@@ -95,23 +97,34 @@ func (c *ConnectPacket) UpdateDb() error {
 	db.Save(&client)
 	return nil
 }
-func (c *ConnectPacket) SaveDb() bool {
-	db, err := gorm.Open("mysql", "root:71451085Zf*@/test?charset=utf8&parseTime=True&loc=Local")
-	if err != nil {
-		return false
-	}
+func (c *ConnectPacket) DeleteSession() error {
+	db, err := OpenDb()
 	defer db.Close()
 	//db.LogMode(true)
 	var client ConnectPacket
-	c.Online = true
-	if !db.Where("client_id=?", c.ClientID).First(&client).RecordNotFound() {
-		c.ID = client.ID
-		return true
-	} else {
-
-		db.Create(c)
-		return false
+	if db.Where("id=?", c.ID).First(&client).RecordNotFound() {
+		return errors.New("delete a empty item")
 	}
+	var Subscriptions []Subscription
+	db.Model(&client).Related(&Subscriptions, "Subscriptions")
+	for _, sub := range Subscriptions {
+		topic := SubPool[sub.Topic]
+		delete(topic, client.ID)
+		db.Delete(&sub)
+	}
+	db.Delete(&client)
+
+	return nil
+
+}
+func (c *ConnectPacket) SaveSession() error {
+	db, err := OpenDb()
+	defer db.close()
+	//db.LogMode(true)
+	c.Online = true
+	db.Create(c)
+	return err
+
 }
 
 // Type returns the packets type.
