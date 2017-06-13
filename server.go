@@ -4,8 +4,8 @@ import (
 	"fmt"
 	// "github.com/jinzhu/gorm"
 	// _ "github.com/jinzhu/gorm/dialects/mysql"
-	"github.com/zengfu/backend"
-	"github.com/zengfu/packet"
+	"github.com/zengfu/mqtt/backend"
+	"github.com/zengfu/mqtt/packet"
 	"net"
 )
 
@@ -26,7 +26,6 @@ func main() {
 func Session(socket net.Conn) {
 	defer socket.Close()
 	var session *packet.ConnectPacket
-
 	sem := make(chan byte, 1)
 	stream := packet.NewStream(socket, socket)
 	for {
@@ -36,6 +35,14 @@ func Session(socket net.Conn) {
 			break
 		}
 		switch pkt.Type() {
+		case packet.PINGREQ:
+			pingack := packet.NewPingrespPacket()
+			err := stream.Encoder.Write(pingack)
+			err = stream.Encoder.Flush()
+			if err != nil {
+				fmt.Println(err)
+				break
+			}
 		case packet.CONNECT:
 			session = pkt.(*packet.ConnectPacket)
 			indb := session.SaveDb()
@@ -59,7 +66,7 @@ func Session(socket net.Conn) {
 				cnak.ReturnCode = 0
 				cnak.SessionPresent = false
 			}
-
+			defer packet.DeleteDb(session.ID, cnak.ReturnCode)
 			//send cnak
 			err := stream.Encoder.Write(cnak)
 			stream.Encoder.Flush()
@@ -84,7 +91,7 @@ func Session(socket net.Conn) {
 			sem <- 1
 			suback.PacketID = sub.PacketID
 			err := stream.Encoder.Write(suback)
-			stream.Encoder.Flush()
+			err = stream.Encoder.Flush()
 			if err != nil {
 				fmt.Println(err)
 				break
@@ -98,5 +105,5 @@ func Session(socket net.Conn) {
 		}
 	}
 	fmt.Println("socket close")
-	session.DeleteDb()
+
 }

@@ -103,37 +103,40 @@ func (c *ConnectPacket) SaveDb() bool {
 	defer db.Close()
 	//db.LogMode(true)
 	var client ConnectPacket
+	c.Online = true
 	if !db.Where("client_id=?", c.ClientID).First(&client).RecordNotFound() {
 		c.ID = client.ID
 		return true
 	} else {
-		c.Online = true
+
 		db.Create(c)
 		return false
 	}
 }
-func (c *ConnectPacket) DeleteDb() error {
+func DeleteDb(Id uint, returncode ConnackCode) error {
 	db, err := gorm.Open("mysql", "root:71451085Zf*@/test?charset=utf8&parseTime=True&loc=Local")
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	db.LogMode(true)
+	//db.LogMode(true)
 	var client ConnectPacket
-	fmt.Println(c.ID, c.ClientID)
-	db.Where("client_id=?", c.ClientID).First(&client)
+	if db.Where("id=?", Id).First(&client).RecordNotFound() {
+		return nil
+	}
+	if returncode == 0 {
 
-	if client.CleanSession {
-		var Subscriptions []Subscription
-		db.Model(&client).Related(&Subscriptions, "Subscriptions")
-		fmt.Println(len(Subscriptions))
-		for _, sub := range Subscriptions {
-			db.Delete(&sub)
+		if client.CleanSession {
+			var Subscriptions []Subscription
+			db.Model(&client).Related(&Subscriptions, "Subscriptions")
+			for _, sub := range Subscriptions {
+				db.Delete(&sub)
+			}
+			db.Delete(&client)
+		} else {
+			client.Online = false
+			db.Save(&client)
 		}
-		db.Delete(&client)
-	} else {
-		client.Online = false
-		db.Save(&client)
 	}
 	return nil
 }

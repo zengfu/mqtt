@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
-	"github.com/zengfu/packet"
+	"github.com/zengfu/mqtt/packet"
 )
 
 var (
@@ -88,6 +88,16 @@ func AcceptSub(s *packet.Stream, session *packet.ConnectPacket, sem chan byte) e
 func OneTopic(s *packet.Stream, topic string, sem chan string) {
 	for {
 		payload := <-sem
-		fmt.Println("recev:", topic, payload)
+		//fmt.Println("recev:", topic, payload)
+		pub := packet.NewPublishPacket()
+		pub.Dup = false
+		pub.Message.Topic = topic
+		pub.Message.Payload = payload
+		err := s.Encoder.Write(pub)
+		err = s.Encoder.Flush()
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
 	}
 }
