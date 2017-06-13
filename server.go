@@ -5,7 +5,6 @@ import (
 	// "github.com/jinzhu/gorm"
 	// _ "github.com/jinzhu/gorm/dialects/mysql"
 	"github.com/zengfu/mqtt/backend"
-	"github.com/zengfu/mqtt/packet"
 	"net"
 )
 
@@ -20,90 +19,6 @@ func main() {
 		if err != nil {
 			// handle error
 		}
-		go Session(conn)
+		go backend.Session(conn)
 	}
-}
-func Session(socket net.Conn) {
-	defer socket.Close()
-	var session *packet.ConnectPacket
-	sem := make(chan byte, 1)
-	stream := packet.NewStream(socket, socket)
-	for {
-		pkt, err := stream.Decoder.Read()
-		if err != nil {
-			fmt.Println(err)
-			break
-		}
-		switch pkt.Type() {
-		case packet.PINGREQ:
-			pingack := packet.NewPingrespPacket()
-			err := stream.Encoder.Write(pingack)
-			err = stream.Encoder.Flush()
-			if err != nil {
-				fmt.Println(err)
-				break
-			}
-		case packet.CONNECT:
-			session = pkt.(*packet.ConnectPacket)
-			indb := session.SaveDb()
-
-			cnak := packet.NewConnackPacket()
-			fmt.Println(session.ID, indb)
-			if indb {
-				if session.Online {
-					cnak.ReturnCode = 2
-					cnak.SessionPresent = false
-				} else {
-					session.UpdateDb()
-					cnak.ReturnCode = 0
-					if session.CleanSession {
-						cnak.SessionPresent = false
-					} else {
-						cnak.SessionPresent = true
-					}
-				}
-			} else {
-				cnak.ReturnCode = 0
-				cnak.SessionPresent = false
-			}
-			defer packet.DeleteDb(session.ID, cnak.ReturnCode)
-			//send cnak
-			err := stream.Encoder.Write(cnak)
-			stream.Encoder.Flush()
-			if err != nil {
-				fmt.Println(err)
-				break
-			}
-			if cnak.ReturnCode != 0 {
-				break
-			}
-			go backend.AcceptSub(stream, session, sem)
-		case packet.SUBSCRIBE:
-			sub := pkt.(*packet.SubscribePacket)
-			//fmt.Println(sub.PacketID)
-			suback := packet.NewSubackPacket()
-			for _, sub := range sub.Subscriptions {
-				suback.ReturnCodes = append(suback.ReturnCodes, sub.QOS)
-			}
-			sub.SaveDb(session)
-			//go AcceptTopic()
-			//have new subscribe
-			sem <- 1
-			suback.PacketID = sub.PacketID
-			err := stream.Encoder.Write(suback)
-			err = stream.Encoder.Flush()
-			if err != nil {
-				fmt.Println(err)
-				break
-			}
-		case packet.PUBLISH:
-			pub := pkt.(*packet.PublishPacket)
-			backend.AcceptPub(pub.Message.Topic, pub.Message.Payload)
-		case packet.DISCONNECT:
-			//DeleteSession(session)
-			break
-		}
-	}
-	fmt.Println("socket close")
-
 }

@@ -113,33 +113,6 @@ func (c *ConnectPacket) SaveDb() bool {
 		return false
 	}
 }
-func DeleteDb(Id uint, returncode ConnackCode) error {
-	db, err := gorm.Open("mysql", "root:71451085Zf*@/test?charset=utf8&parseTime=True&loc=Local")
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	//db.LogMode(true)
-	var client ConnectPacket
-	if db.Where("id=?", Id).First(&client).RecordNotFound() {
-		return nil
-	}
-	if returncode == 0 {
-
-		if client.CleanSession {
-			var Subscriptions []Subscription
-			db.Model(&client).Related(&Subscriptions, "Subscriptions")
-			for _, sub := range Subscriptions {
-				db.Delete(&sub)
-			}
-			db.Delete(&client)
-		} else {
-			client.Online = false
-			db.Save(&client)
-		}
-	}
-	return nil
-}
 
 // Type returns the packets type.
 func (cp *ConnectPacket) Type() Type {
